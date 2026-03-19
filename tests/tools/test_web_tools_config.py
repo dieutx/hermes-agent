@@ -463,6 +463,34 @@ class TestParallelClientConfig:
             assert client1 is client2
 
 
+class TestWebSearchErrorHandling:
+    """Test suite for web_search_tool() error responses."""
+
+    def test_search_error_response_does_not_expose_diagnostics(self):
+        import tools.web_tools
+
+        firecrawl_client = MagicMock()
+        firecrawl_client.search.side_effect = RuntimeError("boom")
+
+        with patch("tools.web_tools._get_backend", return_value="firecrawl"), \
+             patch("tools.web_tools._get_firecrawl_client", return_value=firecrawl_client), \
+             patch("tools.interrupt.is_interrupted", return_value=False), \
+             patch.object(tools.web_tools._debug, "log_call") as mock_log_call, \
+             patch.object(tools.web_tools._debug, "save"):
+            result = json.loads(tools.web_tools.web_search_tool("test query", limit=3))
+
+        assert result == {"error": "Error searching web: boom"}
+
+        debug_payload = mock_log_call.call_args.args[1]
+        assert debug_payload["error"] == "Error searching web: boom"
+        assert "traceback" not in debug_payload["error"]
+        assert "exception_type" not in debug_payload["error"]
+        assert "config" not in result
+        assert "exception_type" not in result
+        assert "exception_chain" not in result
+        assert "traceback" not in result
+
+
 class TestCheckWebApiKey:
     """Test suite for check_web_api_key() unified availability check."""
 

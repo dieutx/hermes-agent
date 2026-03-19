@@ -1010,11 +1010,11 @@ def web_search_tool(query: str, limit: int = 5) -> str:
     except Exception as e:
         error_msg = f"Error searching web: {str(e)}"
         logger.debug("%s", error_msg)
-        
+
         debug_call_data["error"] = error_msg
         _debug.log_call("web_search_tool", debug_call_data)
         _debug.save()
-        
+
         return json.dumps({"error": error_msg}, ensure_ascii=False)
 
 
