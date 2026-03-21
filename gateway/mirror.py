@@ -46,7 +46,7 @@ def mirror_to_session(
             return False
 
         mirror_msg = {
-            "role": "assistant",
+            "role": "user",
             "content": message_text,
             "timestamp": datetime.now().isoformat(),
             "mirror": True,
@@ -123,7 +123,7 @@ def _append_to_sqlite(session_id: str, message: dict) -> None:
         db = SessionDB()
         db.append_message(
             session_id=session_id,
-            role=message.get("role", "assistant"),
+            role=message.get("role", "user"),
             content=message.get("content"),
         )
     except Exception as e:
