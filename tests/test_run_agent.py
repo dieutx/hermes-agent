@@ -2478,6 +2478,66 @@ class TestAnthropicCredentialRefresh:
         assert result is response
 
 
+class TestMiniMaxAuthNotOverridden:
+    """MiniMax (and other third-party /anthropic endpoints) must not call resolve_anthropic_token. Regression for #2374."""
+
+    def test_minimax_init_does_not_resolve_anthropic_token(self):
+        """MiniMax init must use the provider key, not resolve_anthropic_token()."""
+        with (
+            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+            patch("run_agent.check_toolset_requirements", return_value={}),
+            patch("agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),
+            patch("agent.anthropic_adapter.resolve_anthropic_token") as mock_resolve,
+        ):
+            agent = AIAgent(
+                api_key="minimax-provider-key-1234567890",
+                base_url="https://api.minimax.io/anthropic",
+                provider="minimax",
+                api_mode="anthropic_messages",
+                quiet_mode=True,
+                skip_context_files=True,
+                skip_memory=True,
+            )
+
+        mock_resolve.assert_not_called()
+        assert agent._anthropic_api_key == "minimax-provider-key-1234567890"
+
+    def test_minimax_refresh_does_not_resolve_anthropic_token(self):
+        """MiniMax refresh must early-return False, never calling resolve_anthropic_token()."""
+        with (
+            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+            patch("run_agent.check_toolset_requirements", return_value={}),
+            patch("agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),
+        ):
+            agent = AIAgent(
+                api_key="minimax-provider-key-1234567890",
+                base_url="https://api.minimax.io/anthropic",
+                provider="minimax",
+                api_mode="anthropic_messages",
+                quiet_mode=True,
+                skip_context_files=True,
+                skip_memory=True,
+            )
+
+        agent._anthropic_client = MagicMock()
+        agent._anthropic_api_key = "minimax-provider-key-1234567890"
+        agent._anthropic_base_url = "https://api.minimax.io/anthropic"
+
+        with patch("agent.anthropic_adapter.resolve_anthropic_token") as mock_resolve:
+            result = agent._try_refresh_anthropic_client_credentials()
+
+        assert result is False
+        mock_resolve.assert_not_called()
+
+    def test_native_anthropic_auth_helper(self):
+        """_uses_native_anthropic_auth must return True only for native Anthropic endpoints."""
+        assert AIAgent._uses_native_anthropic_auth(None) is True
+        assert AIAgent._uses_native_anthropic_auth("https://api.anthropic.com/v1") is True
+        assert AIAgent._uses_native_anthropic_auth("https://api.minimax.io/anthropic") is False
+        assert AIAgent._uses_native_anthropic_auth("https://dashscope.aliyuncs.com/anthropic") is False
+        assert AIAgent._uses_native_anthropic_auth("https://custom-host.example.com/anthropic") is False
+
+
 # ===================================================================
 # _streaming_api_call tests
 # ===================================================================
