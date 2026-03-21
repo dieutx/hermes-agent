@@ -26,7 +26,7 @@ _PROVIDER_PREFIXES: frozenset[str] = frozenset({
     "openrouter", "nous", "openai-codex", "copilot", "copilot-acp",
     "zai", "kimi-coding", "minimax", "minimax-cn", "anthropic", "deepseek",
     "opencode-zen", "opencode-go", "ai-gateway", "kilocode", "alibaba",
-    "custom", "local",
+    "coding-plan", "custom", "local",
     # Common aliases
     "glm", "z-ai", "z.ai", "zhipu", "github", "github-copilot",
     "github-models", "kimi", "moonshot", "claude", "deep-seek",
@@ -107,6 +107,9 @@ DEFAULT_CONTEXT_LENGTHS = {
     "llama": 131072,
     # Qwen
     "qwen": 131072,
+    # Alibaba Coding Plan — actual API limits differ from advertised model context
+    "coding-plan/qwen3.5-plus": 169984,
+    "coding-plan/qwen3-max": 169984,
     # MiniMax
     "minimax": 204800,
     # GLM
@@ -161,6 +164,8 @@ _URL_TO_PROVIDER: Dict[str, str] = {
     "api.minimax": "minimax",
     "dashscope.aliyuncs.com": "alibaba",
     "dashscope-intl.aliyuncs.com": "alibaba",
+    "coding.dashscope.aliyuncs.com": "coding-plan",
+    "coding-intl.dashscope.aliyuncs.com": "coding-plan",
     "openrouter.ai": "openrouter",
     "inference-api.nousresearch.com": "nous",
     "api.deepseek.com": "deepseek",
