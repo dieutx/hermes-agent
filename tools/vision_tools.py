@@ -45,6 +45,10 @@ logger = logging.getLogger(__name__)
 
 _debug = DebugSession("vision_tools", env_var="VISION_TOOLS_DEBUG")
 
+# Timeout for the LLM vision call. Local models may need significantly longer
+# than the default 30s due to image encoding overhead on constrained hardware.
+VISION_LLM_TIMEOUT = float(os.getenv("HERMES_VISION_TIMEOUT", "120"))
+
 
 def _validate_image_url(url: str) -> bool:
     """
@@ -298,12 +302,15 @@ async def vision_analyze_tool(
         
         logger.info("Processing image with vision model...")
         
-        # Call the vision API via centralized router
+        # Call the vision API via centralized router.
+        # Use a longer timeout than the default 30s — local models with
+        # vision can take 60s+ for image encoding on constrained hardware.
         call_kwargs = {
             "task": "vision",
             "messages": messages,
             "temperature": 0.1,
             "max_tokens": 2000,
+            "timeout": VISION_LLM_TIMEOUT,
         }
         if model:
             call_kwargs["model"] = model
