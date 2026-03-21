@@ -406,7 +406,9 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
         
         final_response = result.get("final_response", "")
         if not final_response:
-            final_response = "(No response generated)"
+            # Treat empty response as silent — the agent had nothing to report.
+            # The output is still saved locally for audit via save_job_output().
+            final_response = ""
         
         output = f"""# Cron Job: {job_name}
 
