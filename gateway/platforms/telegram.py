@@ -129,6 +129,7 @@ class TelegramAdapter(BasePlatformAdapter):
         self._pending_text_batch_tasks: Dict[str, asyncio.Task] = {}
         self._token_lock_identity: Optional[str] = None
         self._polling_error_task: Optional[asyncio.Task] = None
+        self._polling_conflict_retries: int = 0
 
     @staticmethod
     def _looks_like_polling_conflict(error: Exception) -> bool:
@@ -142,11 +143,21 @@ class TelegramAdapter(BasePlatformAdapter):
     async def _handle_polling_conflict(self, error: Exception) -> None:
         if self.has_fatal_error and self.fatal_error_code == "telegram_polling_conflict":
             return
+        max_retries = 3
+        retry_delay = 10
+        self._polling_conflict_retries += 1
+        if self._polling_conflict_retries <= max_retries:
+            logger.warning(
+                "[%s] Telegram 409 conflict (attempt %d/%d), retrying in %ds: %s",
+                self.name, self._polling_conflict_retries, max_retries, retry_delay, error,
+            )
+            await asyncio.sleep(retry_delay)
+            return
         message = (
             "Another Telegram bot poller is already using this token. "
-            "Hermes stopped Telegram polling to avoid endless retry spam. "
+            "Hermes stopped Telegram polling after %d retries to avoid endless retry spam. "
             "Make sure only one gateway instance is running for this bot token."
-        )
+        ) % max_retries
         logger.error("[%s] %s Original error: %s", self.name, message, error)
         self._set_fatal_error("telegram_polling_conflict", message, retryable=False)
         try:
