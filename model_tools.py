@@ -107,10 +107,22 @@ def _run_async(coro):
         loop = None
 
     if loop and loop.is_running():
-        # Inside an async context (gateway, RL env) — run in a fresh thread.
+        # Inside an async context (gateway, RL env) — run in a disposable
+        # thread.  We must NOT use bare ``asyncio.run()`` here because it
+        # creates a new loop, runs the coroutine, and then *closes* the loop.
+        # Any httpx / AsyncOpenAI clients instantiated during that call keep a
+        # reference to the now-dead loop and raise ``RuntimeError('Event loop
+        # is closed')`` when garbage-collected.  Using the per-thread
+        # persistent loop (_get_worker_loop) keeps the loop alive so cached
+        # async transports can shut down cleanly.
         import concurrent.futures
+
+        def _run_on_persistent_loop(c):
+            w_loop = _get_worker_loop()
+            return w_loop.run_until_complete(c)
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(asyncio.run, coro)
+            future = pool.submit(_run_on_persistent_loop, coro)
             return future.result(timeout=300)
 
     # If we're on a worker thread (e.g., parallel tool execution in
