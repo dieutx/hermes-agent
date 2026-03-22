@@ -129,13 +129,13 @@ class _SafeWriter:
     def write(self, data):
         try:
             return self._inner.write(data)
-        except OSError:
+        except (OSError, ValueError):
             return len(data) if isinstance(data, str) else 0
 
     def flush(self):
         try:
             self._inner.flush()
-        except OSError:
+        except (OSError, ValueError):
             pass
 
     def fileno(self):
@@ -144,7 +144,7 @@ class _SafeWriter:
     def isatty(self):
         try:
             return self._inner.isatty()
-        except OSError:
+        except (OSError, ValueError):
             return False
 
     def __getattr__(self, name):
