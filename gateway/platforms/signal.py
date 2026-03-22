@@ -1,13 +1,13 @@
 """Signal messenger platform adapter.
 
-Connects to a signal-cli daemon running in HTTP mode.
-Inbound messages arrive via SSE (Server-Sent Events) streaming.
-Outbound messages and actions use JSON-RPC 2.0 over HTTP.
+Connects to a signal-cli-rest-api instance running in json-rpc mode.
+Inbound messages arrive via WebSocket at /v1/receive/{account}.
+Outbound messages and actions use JSON-RPC 2.0 over HTTP at /v1/rpc.
 
 Based on PR #268 by ibhagwan, rebuilt with bug fixes.
 
 Requires:
-  - signal-cli installed and running: signal-cli daemon --http 127.0.0.1:8080
+  - signal-cli-rest-api running in json-rpc mode
   - SIGNAL_HTTP_URL and SIGNAL_ACCOUNT environment variables set
 """
 
@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from urllib.parse import unquote
 
+import aiohttp
 import httpx
 
 from gateway.config import Platform, PlatformConfig
@@ -46,10 +47,10 @@ logger = logging.getLogger(__name__)
 SIGNAL_MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024  # 100 MB
 MAX_MESSAGE_LENGTH = 8000  # Signal message size limit
 TYPING_INTERVAL = 8.0  # seconds between typing indicator refreshes
-SSE_RETRY_DELAY_INITIAL = 2.0
-SSE_RETRY_DELAY_MAX = 60.0
+WS_RETRY_DELAY_INITIAL = 2.0
+WS_RETRY_DELAY_MAX = 60.0
 HEALTH_CHECK_INTERVAL = 30.0  # seconds between health checks
-HEALTH_CHECK_STALE_THRESHOLD = 120.0  # seconds without SSE activity before concern
+HEALTH_CHECK_STALE_THRESHOLD = 120.0  # seconds without WS activity before concern
 
 # E.164 phone number pattern for redaction
 _PHONE_RE = re.compile(r"\+[1-9]\d{6,14}")
@@ -169,12 +170,11 @@ class SignalAdapter(BasePlatformAdapter):
         self.client: Optional[httpx.AsyncClient] = None
 
         # Background tasks
-        self._sse_task: Optional[asyncio.Task] = None
+        self._ws_task: Optional[asyncio.Task] = None
         self._health_monitor_task: Optional[asyncio.Task] = None
         self._typing_tasks: Dict[str, asyncio.Task] = {}
         self._running = False
-        self._last_sse_activity = 0.0
-        self._sse_response: Optional[httpx.Response] = None
+        self._last_ws_activity = 0.0
 
         # Normalize account for self-message filtering
         self._account_normalized = self.account.strip()
@@ -193,16 +193,16 @@ class SignalAdapter(BasePlatformAdapter):
     # ------------------------------------------------------------------
 
     async def connect(self) -> bool:
-        """Connect to signal-cli daemon and start SSE listener."""
+        """Connect to signal-cli-rest-api and start WebSocket listener."""
         if not self.http_url or not self.account:
             logger.error("Signal: SIGNAL_HTTP_URL and SIGNAL_ACCOUNT are required")
             return False
 
         self.client = httpx.AsyncClient(timeout=30.0)
 
-        # Health check — verify signal-cli daemon is reachable
+        # Health check — verify signal-cli-rest-api is reachable
         try:
-            resp = await self.client.get(f"{self.http_url}/api/v1/check", timeout=10.0)
+            resp = await self.client.get(f"{self.http_url}/v1/health", timeout=10.0)
             if resp.status_code != 200:
                 logger.error("Signal: health check failed (status %d)", resp.status_code)
                 return False
@@ -211,21 +211,21 @@ class SignalAdapter(BasePlatformAdapter):
             return False
 
         self._running = True
-        self._last_sse_activity = time.time()
-        self._sse_task = asyncio.create_task(self._sse_listener())
+        self._last_ws_activity = time.time()
+        self._ws_task = asyncio.create_task(self._ws_listener())
         self._health_monitor_task = asyncio.create_task(self._health_monitor())
 
         logger.info("Signal: connected to %s", self.http_url)
         return True
 
     async def disconnect(self) -> None:
-        """Stop SSE listener and clean up."""
+        """Stop WebSocket listener and clean up."""
         self._running = False
 
-        if self._sse_task:
-            self._sse_task.cancel()
+        if self._ws_task:
+            self._ws_task.cancel()
             try:
-                await self._sse_task
+                await self._ws_task
             except asyncio.CancelledError:
                 pass
 
@@ -248,91 +248,72 @@ class SignalAdapter(BasePlatformAdapter):
         logger.info("Signal: disconnected")
 
     # ------------------------------------------------------------------
-    # SSE Streaming (inbound messages)
+    # WebSocket Streaming (inbound messages)
     # ------------------------------------------------------------------
 
-    async def _sse_listener(self) -> None:
-        """Listen for SSE events from signal-cli daemon."""
-        url = f"{self.http_url}/api/v1/events?account={self.account}"
-        backoff = SSE_RETRY_DELAY_INITIAL
+    async def _ws_listener(self) -> None:
+        """Listen for messages via WebSocket from signal-cli-rest-api."""
+        # Build WebSocket URL from HTTP URL
+        ws_base = self.http_url.replace("https://", "wss://").replace("http://", "ws://")
+        url = f"{ws_base}/v1/receive/{self.account}"
+        backoff = WS_RETRY_DELAY_INITIAL
 
         while self._running:
             try:
-                logger.debug("Signal SSE: connecting to %s", url)
-                async with self.client.stream(
-                    "GET", url,
-                    headers={"Accept": "text/event-stream"},
-                    timeout=None,
-                ) as response:
-                    self._sse_response = response
-                    backoff = SSE_RETRY_DELAY_INITIAL  # Reset on successful connection
-                    self._last_sse_activity = time.time()
-                    logger.info("Signal SSE: connected")
+                logger.debug("Signal WS: connecting to %s", url)
+                async with aiohttp.ClientSession() as session:
+                    async with session.ws_connect(url) as ws:
+                        backoff = WS_RETRY_DELAY_INITIAL
+                        self._last_ws_activity = time.time()
+                        logger.info("Signal WS: connected")
 
-                    buffer = ""
-                    async for chunk in response.aiter_text():
-                        if not self._running:
-                            break
-                        buffer += chunk
-                        while "\n" in buffer:
-                            line, buffer = buffer.split("\n", 1)
-                            line = line.strip()
-                            if not line:
-                                continue
-                            # Parse SSE data lines
-                            if line.startswith("data:"):
-                                data_str = line[5:].strip()
-                                if not data_str:
-                                    continue
-                                self._last_sse_activity = time.time()
+                        async for msg in ws:
+                            if not self._running:
+                                break
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                self._last_ws_activity = time.time()
                                 try:
-                                    data = json.loads(data_str)
+                                    data = json.loads(msg.data)
                                     await self._handle_envelope(data)
                                 except json.JSONDecodeError:
-                                    logger.debug("Signal SSE: invalid JSON: %s", data_str[:100])
+                                    logger.debug("Signal WS: invalid JSON: %s", msg.data[:100])
                                 except Exception:
-                                    logger.exception("Signal SSE: error handling event")
+                                    logger.exception("Signal WS: error handling message")
+                            elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                                break
 
             except asyncio.CancelledError:
                 break
-            except httpx.HTTPError as e:
-                if self._running:
-                    logger.warning("Signal SSE: HTTP error: %s (reconnecting in %.0fs)", e, backoff)
             except Exception as e:
                 if self._running:
-                    logger.warning("Signal SSE: error: %s (reconnecting in %.0fs)", e, backoff)
+                    logger.warning("Signal WS: error: %s (reconnecting in %.0fs)", e, backoff)
 
             if self._running:
-                # Add 20% jitter to prevent thundering herd on reconnection
                 jitter = backoff * 0.2 * random.random()
                 await asyncio.sleep(backoff + jitter)
-                backoff = min(backoff * 2, SSE_RETRY_DELAY_MAX)
-
-        self._sse_response = None
+                backoff = min(backoff * 2, WS_RETRY_DELAY_MAX)
 
     # ------------------------------------------------------------------
     # Health Monitor
     # ------------------------------------------------------------------
 
     async def _health_monitor(self) -> None:
-        """Monitor SSE connection health and force reconnect if stale."""
+        """Monitor WebSocket connection health and force reconnect if stale."""
         while self._running:
             await asyncio.sleep(HEALTH_CHECK_INTERVAL)
             if not self._running:
                 break
 
-            elapsed = time.time() - self._last_sse_activity
+            elapsed = time.time() - self._last_ws_activity
             if elapsed > HEALTH_CHECK_STALE_THRESHOLD:
-                logger.warning("Signal: SSE idle for %.0fs, checking daemon health", elapsed)
+                logger.warning("Signal: WS idle for %.0fs, checking daemon health", elapsed)
                 try:
                     resp = await self.client.get(
-                        f"{self.http_url}/api/v1/check", timeout=10.0
+                        f"{self.http_url}/v1/health", timeout=10.0
                     )
                     if resp.status_code == 200:
-                        # Daemon is alive but SSE is idle — update activity to
-                        # avoid repeated warnings (connection may just be quiet)
-                        self._last_sse_activity = time.time()
-                        logger.debug("Signal: daemon healthy, SSE idle")
+                        self._last_ws_activity = time.time()
+                        logger.debug("Signal: daemon healthy, WS idle")
                     else:
                         logger.warning("Signal: health check failed (%d), forcing reconnect", resp.status_code)
                         self._force_reconnect()
@@ -341,13 +322,9 @@ class SignalAdapter(BasePlatformAdapter):
                     self._force_reconnect()
 
     def _force_reconnect(self) -> None:
-        """Force SSE reconnection by closing the current response."""
-        if self._sse_response and not self._sse_response.is_stream_consumed:
-            try:
-                asyncio.create_task(self._sse_response.aclose())
-            except Exception:
-                pass
-            self._sse_response = None
+        """Force WebSocket reconnection by cancelling the listener task."""
+        if self._ws_task and not self._ws_task.done():
+            self._ws_task.cancel()
 
     # ------------------------------------------------------------------
     # Message Handling
@@ -554,7 +531,7 @@ class SignalAdapter(BasePlatformAdapter):
 
         try:
             resp = await self.client.post(
-                f"{self.http_url}/api/v1/rpc",
+                f"{self.http_url}/v1/rpc",
                 json=payload,
                 timeout=30.0,
             )
