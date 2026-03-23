@@ -3881,6 +3881,20 @@ For more help on a command:
                     print(f"{preview:<50} {last_active:<13} {s['source']:<6} {sid}")
 
         elif action == "export":
+            # Warn if the output path looks like a session ID — the user
+            # probably meant `--session-id` instead of a filename.
+            import re as _re
+            if _re.match(r"^\d{8}_\d{6}_[0-9a-f]+$", args.output):
+                print(f"Hint: '{args.output}' looks like a session ID.")
+                print(f"  To export one session: hermes sessions export output.jsonl --session-id {args.output}")
+                print(f"  To export all sessions to a file named '{args.output}': continue as-is")
+                try:
+                    reply = input("Continue exporting ALL sessions to this filename? [y/N] ")
+                except (EOFError, KeyboardInterrupt):
+                    reply = "n"
+                if reply.lower() not in ("y", "yes"):
+                    return
+
             if args.session_id:
                 resolved_session_id = db.resolve_session_id(args.session_id)
                 if not resolved_session_id:
