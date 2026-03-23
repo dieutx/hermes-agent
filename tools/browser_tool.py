@@ -947,6 +947,26 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with navigation result (includes stealth features info on first nav)
     """
+    # Restrict to http/https — block file://, javascript:, data:, etc.
+    from urllib.parse import urlparse as _urlparse
+    _parsed = _urlparse(url)
+    if _parsed.scheme not in ("http", "https", ""):
+        return json.dumps({
+            "success": False,
+            "error": f"Unsupported URL scheme '{_parsed.scheme}'. Only http and https are allowed.",
+        })
+
+    # SSRF protection — block private/internal addresses
+    try:
+        from tools.url_safety import is_safe_url
+        if not is_safe_url(url):
+            return json.dumps({
+                "success": False,
+                "error": "Blocked: URL targets a private or internal network address.",
+            })
+    except ImportError:
+        pass  # url_safety module not available — skip check
+
     # Website policy check — block before navigating
     blocked = check_website_access(url)
     if blocked:
