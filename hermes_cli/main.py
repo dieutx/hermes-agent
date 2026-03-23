@@ -3906,7 +3906,10 @@ For more help on a command:
                 print(f"Session '{args.session_id}' not found.")
                 return
             if not args.yes:
-                confirm = input(f"Delete session '{resolved_session_id}' and all its messages? [y/N] ")
+                try:
+                    confirm = input(f"Delete session '{resolved_session_id}' and all its messages? [y/N] ")
+                except (EOFError, KeyboardInterrupt):
+                    confirm = "n"
                 if confirm.lower() not in ("y", "yes"):
                     print("Cancelled.")
                     return
@@ -3919,7 +3922,10 @@ For more help on a command:
             days = args.older_than
             source_msg = f" from '{args.source}'" if args.source else ""
             if not args.yes:
-                confirm = input(f"Delete all ended sessions older than {days} days{source_msg}? [y/N] ")
+                try:
+                    confirm = input(f"Delete all ended sessions older than {days} days{source_msg}? [y/N] ")
+                except (EOFError, KeyboardInterrupt):
+                    confirm = "n"
                 if confirm.lower() not in ("y", "yes"):
                     print("Cancelled.")
                     return
