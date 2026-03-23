@@ -1031,11 +1031,14 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
                     )
                 })
 
-            # Collect text from content blocks
+            # Collect text from content blocks, redacting any credentials.
+            # The error path already sanitizes via _sanitize_error(), but
+            # successful responses could also contain secrets (e.g. an MCP
+            # server returning API keys or tokens in its output).
             parts: List[str] = []
             for block in (result.content or []):
                 if hasattr(block, "text"):
-                    parts.append(block.text)
+                    parts.append(_sanitize_error(block.text))
             return json.dumps({"result": "\n".join(parts) if parts else ""})
 
         try:
