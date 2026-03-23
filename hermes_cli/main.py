@@ -3083,7 +3083,13 @@ For more help on a command:
         default=False,
         help="Include the session ID in the agent's system prompt"
     )
-    
+    parser.add_argument(
+        "-q", "--query",
+        dest="top_query",
+        default=None,
+        help="Single query to run (exits after response). Use with --resume/-c."
+    )
+
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
     
     # =========================================================================
@@ -4155,7 +4161,7 @@ For more help on a command:
     # Handle top-level --resume / --continue as shortcut to chat
     if (args.resume or args.continue_last) and args.command is None:
         args.command = "chat"
-        args.query = None
+        args.query = getattr(args, "top_query", None)
         args.model = None
         args.provider = None
         args.toolsets = None
