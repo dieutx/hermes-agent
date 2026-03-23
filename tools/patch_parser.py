@@ -28,6 +28,7 @@ Usage:
         result = apply_v4a_operations(operations, file_ops)
 """
 
+import os
 import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Any
@@ -206,28 +207,58 @@ def parse_v4a_patch(patch_content: str) -> Tuple[List[PatchOperation], Optional[
     return operations, None
 
 
-def apply_v4a_operations(operations: List[PatchOperation], 
+def _validate_patch_path(path: str) -> Optional[str]:
+    """Reject paths that escape the working directory.
+
+    Returns an error message if the path is unsafe, or None if OK.
+    Blocks absolute paths and ``../`` traversal so a crafted patch
+    cannot target system files like ``/etc/passwd`` or ``~/.ssh/``.
+    """
+    if not path or not path.strip():
+        return "empty file path"
+    cleaned = path.strip()
+    # Block absolute paths
+    if os.path.isabs(cleaned):
+        return f"absolute paths not allowed in patches: {cleaned}"
+    # Block parent directory traversal
+    normalized = os.path.normpath(cleaned)
+    if normalized.startswith(".."):
+        return f"path traversal not allowed in patches: {cleaned}"
+    return None
+
+
+def apply_v4a_operations(operations: List[PatchOperation],
                           file_ops: Any) -> 'PatchResult':
     """
     Apply V4A patch operations using a file operations interface.
-    
+
     Args:
         operations: List of PatchOperation from parse_v4a_patch
         file_ops: Object with read_file, write_file methods
-    
+
     Returns:
         PatchResult with results of all operations
     """
     # Import here to avoid circular imports
     from tools.file_operations import PatchResult
-    
+
     files_modified = []
     files_created = []
     files_deleted = []
     all_diffs = []
     errors = []
-    
+
     for op in operations:
+        # Validate all file paths before applying any operation
+        path_error = _validate_patch_path(op.file_path)
+        if path_error:
+            errors.append(f"Rejected {op.operation.value} on {op.file_path}: {path_error}")
+            continue
+        if op.new_path:
+            path_error = _validate_patch_path(op.new_path)
+            if path_error:
+                errors.append(f"Rejected move target {op.new_path}: {path_error}")
+                continue
         try:
             if op.operation == OperationType.ADD:
                 result = _apply_add(op, file_ops)

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from tools.patch_parser import (
     OperationType,
+    _validate_patch_path,
     apply_v4a_operations,
     parse_v4a_patch,
 )
@@ -185,3 +186,52 @@ class TestApplyUpdate:
             '    result = 1\n'
             '    return result + 1'
         )
+
+
+class TestPathValidation:
+    """Verify patch parser rejects paths that escape the working directory."""
+
+    def test_relative_path_allowed(self):
+        assert _validate_patch_path("src/main.py") is None
+
+    def test_nested_relative_allowed(self):
+        assert _validate_patch_path("a/b/c/file.txt") is None
+
+    def test_absolute_path_blocked(self):
+        assert _validate_patch_path("/etc/passwd") is not None
+
+    def test_absolute_home_blocked(self):
+        assert _validate_patch_path("/root/.ssh/authorized_keys") is not None
+
+    def test_parent_traversal_blocked(self):
+        assert _validate_patch_path("../../../etc/shadow") is not None
+
+    def test_hidden_traversal_blocked(self):
+        assert _validate_patch_path("src/../../etc/passwd") is not None
+
+    def test_empty_path_blocked(self):
+        assert _validate_patch_path("") is not None
+
+    def test_apply_rejects_absolute_path_in_patch(self):
+        """A crafted patch targeting /etc/passwd should be rejected."""
+        patch = """\
+*** Begin Patch
+*** Update File: /etc/passwd
+@@ root @@
+ root:x:0:0:root:/root:/bin/bash
+-root:x:0:0:root:/root:/bin/bash
++root:x:0:0:root:/root:/bin/sh
+*** End Patch"""
+        ops, err = parse_v4a_patch(patch)
+        assert err is None
+        assert len(ops) == 1
+
+        from types import SimpleNamespace
+        file_ops = SimpleNamespace(
+            read_file=lambda *a, **kw: None,
+            write_file=lambda *a, **kw: None,
+        )
+        result = apply_v4a_operations(ops, file_ops)
+        # Should have error, not success
+        assert result.error is not None
+        assert "absolute" in result.error.lower() or "rejected" in result.error.lower()
