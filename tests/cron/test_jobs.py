@@ -339,6 +339,21 @@ class TestMarkJobRun:
         assert updated["last_error"] == "timeout"
 
 
+    def test_unknown_job_id_does_not_save(self, tmp_cron_dir):
+        """mark_job_run with an unknown job_id should not write the file."""
+        job = create_job(prompt="Real", schedule="every 1h")
+        jobs_file = tmp_cron_dir / "cron" / "jobs.json"
+        import os, time
+        mtime_before = os.path.getmtime(jobs_file)
+
+        time.sleep(0.05)  # ensure mtime would differ if written
+
+        mark_job_run("nonexistent-id", success=True)
+
+        mtime_after = os.path.getmtime(jobs_file)
+        assert mtime_before == mtime_after, "jobs file was written despite unknown job_id"
+
+
 class TestGetDueJobs:
     def test_past_due_within_window_returned(self, tmp_cron_dir):
         """Jobs within the dynamic grace window are still considered due (not stale).

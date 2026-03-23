@@ -593,8 +593,6 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None):
 
             save_jobs(jobs)
             return
-    
-    save_jobs(jobs)
 
 
 def get_due_jobs() -> List[Dict[str, Any]]:
