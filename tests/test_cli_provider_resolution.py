@@ -469,3 +469,78 @@ def test_model_flow_custom_saves_verified_v1_base_url(monkeypatch, capsys):
     assert saved_env["OPENAI_BASE_URL"] == "http://localhost:8000/v1"
     assert saved_env["OPENAI_API_KEY"] == "local-key"
     assert saved_env["MODEL"] == "llm"
+
+
+# ── Local endpoint empty API key tolerance (Fixes #2565) ──────────────
+
+
+def test_local_endpoint_allows_empty_api_key(monkeypatch):
+    """Local endpoints (localhost, 127.0.0.1) should not require an API key.
+
+    Regression test for #2565: users with local models (Ollama, llama.cpp)
+    who set api_key to 'none', 'null', or left it empty got a blocking error
+    'Provider resolver returned an empty API key'.
+    """
+    cli = _import_cli()
+
+    monkeypatch.setattr(
+        "hermes_cli.runtime_provider.resolve_runtime_provider",
+        lambda **kw: {
+            "provider": "custom",
+            "api_mode": "chat_completions",
+            "base_url": "http://localhost:11434/v1",
+            "api_key": "",  # empty — local model needs no key
+            "requested_provider": "custom",
+        },
+    )
+
+    shell = cli.HermesCLI(model="qwen2.5:7b", compact=True, max_turns=1)
+    result = shell._ensure_runtime_credentials()
+
+    # Should succeed, not return False
+    assert result is not False
+    # api_key should be filled with a sentinel
+    assert shell.api_key == "no-key-required"
+
+
+def test_remote_endpoint_rejects_empty_api_key(monkeypatch):
+    """Remote endpoints must still require a valid API key."""
+    cli = _import_cli()
+
+    monkeypatch.setattr(
+        "hermes_cli.runtime_provider.resolve_runtime_provider",
+        lambda **kw: {
+            "provider": "openrouter",
+            "api_mode": "chat_completions",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "",  # empty — should fail for remote
+            "requested_provider": "openrouter",
+        },
+    )
+
+    shell = cli.HermesCLI(model="gpt-4", compact=True, max_turns=1)
+    result = shell._ensure_runtime_credentials()
+
+    assert result is False
+
+
+def test_local_127_endpoint_allows_empty_api_key(monkeypatch):
+    """127.0.0.1 endpoints should also be treated as local."""
+    cli = _import_cli()
+
+    monkeypatch.setattr(
+        "hermes_cli.runtime_provider.resolve_runtime_provider",
+        lambda **kw: {
+            "provider": "custom",
+            "api_mode": "chat_completions",
+            "base_url": "http://127.0.0.1:8080/v1",
+            "api_key": "",
+            "requested_provider": "custom",
+        },
+    )
+
+    shell = cli.HermesCLI(model="local-model", compact=True, max_turns=1)
+    result = shell._ensure_runtime_credentials()
+
+    assert result is not False
+    assert shell.api_key == "no-key-required"

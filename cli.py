@@ -1746,9 +1746,18 @@ class HermesCLI:
         resolved_api_mode = runtime.get("api_mode", self.api_mode)
         resolved_acp_command = runtime.get("command")
         resolved_acp_args = list(runtime.get("args") or [])
+        # Local endpoints (Ollama, llama.cpp, vLLM) typically don't require
+        # an API key.  Allow empty/placeholder keys when the base URL points
+        # to a local address so users aren't forced to invent dummy values.
+        _is_local_endpoint = base_url and any(
+            h in (base_url or "") for h in ("localhost", "127.0.0.1", "0.0.0.0", "[::1]")
+        )
         if not isinstance(api_key, str) or not api_key:
-            self.console.print("[bold red]Provider resolver returned an empty API key.[/]")
-            return False
+            if _is_local_endpoint:
+                api_key = "no-key-required"
+            else:
+                self.console.print("[bold red]Provider resolver returned an empty API key.[/]")
+                return False
         if not isinstance(base_url, str) or not base_url:
             self.console.print("[bold red]Provider resolver returned an empty base URL.[/]")
             return False
