@@ -292,6 +292,8 @@ def test_check_website_access_blocks_scheme_less_urls(tmp_path):
 def test_browser_navigate_returns_policy_block(monkeypatch):
     from tools import browser_tool
 
+    # Allow the URL past SSRF check so the website policy check is reached
+    monkeypatch.setattr(browser_tool, "_is_browser_url_safe", lambda url: True)
     monkeypatch.setattr(
         browser_tool,
         "check_website_access",

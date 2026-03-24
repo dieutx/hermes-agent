@@ -70,6 +70,11 @@ try:
     from tools.website_policy import check_website_access
 except Exception:
     check_website_access = lambda url: None  # noqa: E731 — fail-open if policy module unavailable
+
+try:
+    from tools.url_safety import is_safe_url as _is_browser_url_safe
+except Exception:
+    _is_browser_url_safe = lambda url: True  # noqa: E731 — fail-open if module unavailable
 from tools.browser_providers.base import CloudBrowserProvider
 from tools.browser_providers.browserbase import BrowserbaseProvider
 from tools.browser_providers.browser_use import BrowserUseProvider
@@ -957,15 +962,11 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
         })
 
     # SSRF protection — block private/internal addresses
-    try:
-        from tools.url_safety import is_safe_url
-        if not is_safe_url(url):
-            return json.dumps({
-                "success": False,
-                "error": "Blocked: URL targets a private or internal network address.",
-            })
-    except ImportError:
-        pass  # url_safety module not available — skip check
+    if not _is_browser_url_safe(url):
+        return json.dumps({
+            "success": False,
+            "error": "Blocked: URL targets a private or internal network address.",
+        })
 
     # Website policy check — block before navigating
     blocked = check_website_access(url)
