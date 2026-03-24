@@ -1146,6 +1146,10 @@ class GatewayRunner:
                         continue  # already flushed this session
                     if not self.session_store._is_session_expired(entry):
                         continue  # session still active
+                    # Skip sessions with an agent still running — tearing down
+                    # Honcho mid-execution causes tool failures and corrupted state.
+                    if key in self._running_agents:
+                        continue
                     # Session has expired — flush memories in the background
                     logger.info(
                         "Session %s expired (key=%s), flushing memories proactively",
