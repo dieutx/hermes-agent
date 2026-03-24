@@ -160,6 +160,7 @@ class SlackAdapter(BasePlatformAdapter):
             chunks = self.truncate_message(formatted, self.MAX_MESSAGE_LENGTH)
 
             thread_ts = self._resolve_thread_ts(reply_to, metadata)
+            first_result = None
             last_result = None
 
             # reply_broadcast: also post thread replies to the main channel.
@@ -178,10 +179,14 @@ class SlackAdapter(BasePlatformAdapter):
                         kwargs["reply_broadcast"] = True
 
                 last_result = await self._app.client.chat_postMessage(**kwargs)
+                if first_result is None:
+                    first_result = last_result
 
+            # Return the FIRST chunk's message_id — that's the primary message
+            # the gateway tracks for streaming edits and reply threading.
             return SendResult(
                 success=True,
-                message_id=last_result.get("ts") if last_result else None,
+                message_id=first_result.get("ts") if first_result else None,
                 raw_response=last_result,
             )
 
