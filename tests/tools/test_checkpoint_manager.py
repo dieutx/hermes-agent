@@ -411,3 +411,22 @@ class TestErrorResilience:
         # Should not raise
         result = mgr.ensure_checkpoint(str(work_dir), "test")
         assert result is False
+
+
+class TestRestorePathTraversal:
+    """Verify /rollback blocks path traversal attempts."""
+
+    def test_traversal_blocked(self, mgr, work_dir):
+        result = mgr.restore(str(work_dir), "abc123", file_path="../../../etc/passwd")
+        assert result["success"] is False
+        assert "traversal" in result["error"].lower()
+
+    def test_absolute_path_outside_blocked(self, mgr, work_dir):
+        result = mgr.restore(str(work_dir), "abc123", file_path="/etc/shadow")
+        assert result["success"] is False
+        assert "traversal" in result["error"].lower()
+
+    def test_relative_inside_allowed(self, mgr, work_dir):
+        # Will fail on missing checkpoint, but NOT on path traversal
+        result = mgr.restore(str(work_dir), "abc123", file_path="src/main.py")
+        assert "traversal" not in result.get("error", "").lower()

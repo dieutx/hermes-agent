@@ -365,6 +365,13 @@ class CheckpointManager:
         Returns dict with success/error info.
         """
         abs_dir = str(Path(working_dir).resolve())
+
+        # Validate file_path early — block traversal outside working directory
+        if file_path:
+            resolved = os.path.normpath(os.path.join(abs_dir, file_path))
+            if not resolved.startswith(abs_dir + os.sep) and resolved != abs_dir:
+                return {"success": False, "error": f"Path traversal not allowed: {file_path}"}
+
         shadow = _shadow_repo_path(abs_dir)
 
         if not (shadow / "HEAD").exists():
