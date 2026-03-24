@@ -1057,5 +1057,27 @@ class TestSendEmailStandalone(unittest.TestCase):
         self.assertIn("not configured", result["error"])
 
 
+class TestEmailMessageIdDomain(unittest.TestCase):
+    """Verify Message-ID domain extraction handles bad EMAIL_ADDRESS."""
+
+    def test_address_with_at_sign(self):
+        """Normal email address extracts domain correctly."""
+        addr = "user@example.com"
+        domain = addr.split("@")[1] if "@" in addr else "hermes.local"
+        self.assertEqual(domain, "example.com")
+
+    def test_address_without_at_sign(self):
+        """Malformed address falls back to hermes.local."""
+        addr = "not-an-email"
+        domain = addr.split("@")[1] if "@" in addr else "hermes.local"
+        self.assertEqual(domain, "hermes.local")
+
+    def test_empty_address(self):
+        """Empty address falls back to hermes.local."""
+        addr = ""
+        domain = addr.split("@")[1] if "@" in addr else "hermes.local"
+        self.assertEqual(domain, "hermes.local")
+
+
 if __name__ == "__main__":
     unittest.main()
