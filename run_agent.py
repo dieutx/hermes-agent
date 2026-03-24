@@ -3906,6 +3906,11 @@ class AIAgent:
             "image/jpeg": ".jpg",
             "image/jpg": ".jpg",
         }.get(mime, ".jpg")
+        # Reject oversized images before decoding to prevent OOM.
+        # 50 MB base64 ≈ 37.5 MB decoded — reasonable limit for inline images.
+        _MAX_BASE64_LEN = 50 * 1024 * 1024
+        if len(data) > _MAX_BASE64_LEN:
+            raise ValueError(f"Base64 image data too large ({len(data):,} bytes, max {_MAX_BASE64_LEN:,})")
         tmp = tempfile.NamedTemporaryFile(prefix="anthropic_image_", suffix=suffix, delete=False)
         with tmp:
             tmp.write(base64.b64decode(data))
