@@ -282,3 +282,28 @@ class TestSecretCaptureResultContract:
             "validated": False,
         }
         assert "secret" not in json.dumps(result).lower()
+
+
+class TestDuplicateRegistration:
+    def test_duplicate_tool_warns(self, caplog):
+        """Re-registering a tool should log a warning, not silently overwrite."""
+        import logging
+        reg = ToolRegistry()
+        reg.register(name="dup", toolset="first", schema=_make_schema("dup"), handler=_dummy_handler)
+
+        with caplog.at_level(logging.WARNING, logger="tools.registry"):
+            reg.register(name="dup", toolset="second", schema=_make_schema("dup"), handler=_dummy_handler)
+
+        assert any("registered twice" in r.message for r in caplog.records)
+
+    def test_duplicate_tool_keeps_latest(self):
+        """The latest registration should win (backwards compatible)."""
+        reg = ToolRegistry()
+        reg.register(name="dup", toolset="first", schema=_make_schema("dup"), handler=_dummy_handler)
+
+        def _handler2(args, **kw):
+            return json.dumps({"version": 2})
+
+        reg.register(name="dup", toolset="second", schema=_make_schema("dup"), handler=_handler2)
+        result = json.loads(reg.dispatch("dup", {}))
+        assert result == {"version": 2}

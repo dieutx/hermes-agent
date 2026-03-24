@@ -66,6 +66,12 @@ class ToolRegistry:
         emoji: str = "",
     ):
         """Register a tool.  Called at module-import time by each tool file."""
+        if name in self._tools:
+            logger.warning(
+                "Tool '%s' registered twice (toolset '%s' overwriting '%s'). "
+                "Check for duplicate plugin loads.",
+                name, toolset, self._tools[name].toolset,
+            )
         self._tools[name] = ToolEntry(
             name=name,
             toolset=toolset,
