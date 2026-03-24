@@ -615,7 +615,7 @@ class SignalAdapter(BasePlatformAdapter):
         if ts:
             self._recent_sent_timestamps.add(ts)
             if len(self._recent_sent_timestamps) > self._max_recent_timestamps:
-                self._recent_sent_timestamps.pop()
+                self._recent_sent_timestamps.discard(min(self._recent_sent_timestamps))
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
         """Send a typing indicator."""
