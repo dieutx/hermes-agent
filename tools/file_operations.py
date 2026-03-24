@@ -75,6 +75,49 @@ WRITE_DENIED_PREFIXES = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Read-path deny list — blocks reads on credential/secret files
+# ---------------------------------------------------------------------------
+
+READ_DENIED_PATHS = {
+    os.path.realpath(p) for p in [
+        os.path.join(_HOME, ".hermes", ".env"),
+        os.path.join(_HOME, ".hermes", "auth.json"),
+        os.path.join(_HOME, ".ssh", "id_rsa"),
+        os.path.join(_HOME, ".ssh", "id_ed25519"),
+        os.path.join(_HOME, ".ssh", "id_ecdsa"),
+        os.path.join(_HOME, ".netrc"),
+        os.path.join(_HOME, ".pgpass"),
+        os.path.join(_HOME, ".npmrc"),
+        os.path.join(_HOME, ".pypirc"),
+        "/etc/shadow",
+        "/etc/gshadow",
+    ]
+}
+
+READ_DENIED_PREFIXES = [
+    os.path.realpath(p) + os.sep for p in [
+        os.path.join(_HOME, ".aws"),
+        os.path.join(_HOME, ".gnupg"),
+        os.path.join(_HOME, ".kube"),
+    ]
+]
+
+
+def _is_read_denied(path: str) -> bool:
+    """Return True if path targets a known credential/secret file."""
+    try:
+        resolved = os.path.realpath(os.path.expanduser(str(path)))
+    except (ValueError, OSError):
+        return False
+    if resolved in READ_DENIED_PATHS:
+        return True
+    for prefix in READ_DENIED_PREFIXES:
+        if resolved.startswith(prefix):
+            return True
+    return False
+
+
 def _get_safe_write_root() -> Optional[str]:
     """Return the resolved HERMES_WRITE_SAFE_ROOT path, or None if unset.
 
@@ -477,10 +520,14 @@ class ShellFileOperations(FileOperations):
         """
         # Expand ~ and other shell paths
         path = self._expand_path(path)
-        
+
+        # Block reads on known credential/secret files
+        if _is_read_denied(path):
+            return ReadResult(error=f"Access denied: '{path}' is a protected credential file.")
+
         # Clamp limit
         limit = min(limit, MAX_LINES)
-        
+
         # Check if file exists and get size (wc -c is POSIX, works on Linux + macOS)
         stat_cmd = f"wc -c < {self._escape_shell_arg(path)} 2>/dev/null"
         stat_result = self._exec(stat_cmd)
@@ -854,7 +901,11 @@ class ShellFileOperations(FileOperations):
         """
         # Expand ~ and other shell paths
         path = self._expand_path(path)
-        
+
+        # Block searches targeting known credential directories
+        if _is_read_denied(path):
+            return SearchResult(error=f"Access denied: '{path}' is a protected path.")
+
         # Validate that the path exists before searching
         check = self._exec(f"test -e {self._escape_shell_arg(path)} && echo exists || echo not_found")
         if "not_found" in check.stdout:
