@@ -62,7 +62,7 @@ class GatewayStreamConsumer:
         self.chat_id = chat_id
         self.cfg = config or StreamConsumerConfig()
         self.metadata = metadata
-        self._queue: queue.Queue = queue.Queue()
+        self._queue: queue.Queue = queue.Queue(maxsize=10000)
         self._accumulated = ""
         self._message_id: Optional[str] = None
         self._already_sent = False
@@ -79,7 +79,10 @@ class GatewayStreamConsumer:
     def on_delta(self, text: str) -> None:
         """Thread-safe callback — called from the agent's worker thread."""
         if text:
-            self._queue.put(text)
+            try:
+                self._queue.put_nowait(text)
+            except queue.Full:
+                pass  # drop token rather than block the agent thread
 
     def finish(self) -> None:
         """Signal that the stream is complete."""
