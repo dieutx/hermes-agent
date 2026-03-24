@@ -124,6 +124,15 @@ class ProcessRegistry:
 
     # ----- Spawn -----
 
+    def _check_running_limit(self) -> None:
+        """Raise if the number of running processes has reached MAX_PROCESSES."""
+        if len(self._running) >= MAX_PROCESSES:
+            raise RuntimeError(
+                f"Cannot spawn: {len(self._running)} background processes already "
+                f"running (limit {MAX_PROCESSES}). Kill some first with "
+                f"background_process_manager(action='kill', process_id=ID)."
+            )
+
     def spawn_local(
         self,
         command: str,
@@ -143,6 +152,7 @@ class ProcessRegistry:
                      CLI tools (Codex, Claude Code, Python REPL). Falls back to
                      subprocess.Popen if ptyprocess is not installed.
         """
+        self._check_running_limit()
         session = ProcessSession(
             id=f"proc_{uuid.uuid4().hex[:12]}",
             command=command,
@@ -256,6 +266,7 @@ class ProcessRegistry:
         This is less capable than local spawn (no live stdout pipe, no stdin),
         but it ensures the command runs in the correct sandbox context.
         """
+        self._check_running_limit()
         session = ProcessSession(
             id=f"proc_{uuid.uuid4().hex[:12]}",
             command=command,
