@@ -2383,6 +2383,11 @@ def _update_via_zip(args):
         
         print("→ Extracting...")
         with zipfile.ZipFile(zip_path, 'r') as zf:
+            for member in zf.infolist():
+                # Reject path traversal entries (zip slip)
+                target = os.path.realpath(os.path.join(tmp_dir, member.filename))
+                if not target.startswith(os.path.realpath(tmp_dir) + os.sep) and target != os.path.realpath(tmp_dir):
+                    raise ValueError(f"Blocked path traversal in ZIP entry: {member.filename}")
             zf.extractall(tmp_dir)
         
         # GitHub ZIPs extract to hermes-agent-<branch>/
