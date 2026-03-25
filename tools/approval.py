@@ -52,6 +52,11 @@ DANGEROUS_PATTERNS = [
     # Gateway protection: never start gateway outside systemd management
     (r'gateway\s+run\b.*(&\s*$|&\s*;|\bdisown\b|\bsetsid\b)', "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')"),
     (r'\bnohup\b.*gateway\s+run\b', "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')"),
+    # Encoding-based bypass: base64-decoded payloads piped to a shell
+    # can hide any destructive command from pattern detection.
+    (r'\bbase64\b.*\|\s*(ba)?sh\b', "base64 decode piped to shell"),
+    (r'\|\s*base64\s+(-d|--decode)\b.*\|\s*(ba)?sh\b', "base64 decode piped to shell"),
+    (r'\beval\b.*\bbase64\b', "eval with base64 decode"),
 ]
 
 

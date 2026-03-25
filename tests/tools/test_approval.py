@@ -506,6 +506,34 @@ class TestGatewayProtection:
         dangerous, key, desc = detect_dangerous_command(cmd)
         assert dangerous is False
 
+    # --- Base64 encoding bypass detection ---
+
+    def test_base64_decode_pipe_to_bash(self):
+        cmd = "echo cm0gLXJmIC8= | base64 -d | bash"
+        dangerous, key, desc = detect_dangerous_command(cmd)
+        assert dangerous is True, "base64 decode piped to bash must be caught"
+
+    def test_base64_decode_pipe_to_sh(self):
+        cmd = "echo cm0gLXJmIC8= | base64 -d | sh"
+        dangerous, key, desc = detect_dangerous_command(cmd)
+        assert dangerous is True, "base64 decode piped to sh must be caught"
+
+    def test_base64_heredoc_to_bash(self):
+        cmd = "base64 -d <<< cm0gLXJmIC8= | bash"
+        dangerous, key, desc = detect_dangerous_command(cmd)
+        assert dangerous is True, "base64 heredoc piped to bash must be caught"
+
+    def test_eval_base64_decode(self):
+        cmd = 'eval $(echo cm0gLXJmIC8= | base64 -d)'
+        dangerous, key, desc = detect_dangerous_command(cmd)
+        assert dangerous is True, "eval with base64 decode must be caught"
+
+    def test_normal_base64_encode_not_flagged(self):
+        """Encoding (not decoding to shell) should not be flagged."""
+        cmd = "echo hello | base64 > encoded.txt"
+        dangerous, key, desc = detect_dangerous_command(cmd)
+        assert dangerous is False, "base64 encode without pipe to shell is safe"
+
     def test_systemctl_restart_not_flagged(self):
         """Using systemctl to manage the gateway is the correct approach."""
         cmd = "systemctl --user restart hermes-gateway"
