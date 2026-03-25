@@ -52,6 +52,18 @@ DANGEROUS_PATTERNS = [
     # Gateway protection: never start gateway outside systemd management
     (r'gateway\s+run\b.*(&\s*$|&\s*;|\bdisown\b|\bsetsid\b)', "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')"),
     (r'\bnohup\b.*gateway\s+run\b', "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')"),
+    # Download-then-execute: download payload to file, then run it separately.
+    # Evades the existing curl/wget pipe-to-shell pattern which only catches
+    # direct piping (curl | sh), not two-step download-then-execute.
+    (r'\b(curl|wget)\b.*-[oO]\s*\S+.*&&\s*(ba)?sh\b', "download and execute payload"),
+    (r'\b(curl|wget)\b.*-[oO]\s*\S+.*;\s*(ba)?sh\b', "download and execute payload"),
+    # Reverse shells via bash /dev/tcp (built-in, no external tools needed)
+    (r'/dev/tcp/', "reverse shell via /dev/tcp"),
+    (r'/dev/udp/', "reverse shell via /dev/udp"),
+    # Hex decode to shell (xxd, printf with hex escapes)
+    (r'\bxxd\b.*-r.*\|\s*(ba)?sh\b', "hex decode piped to shell"),
+    # openssl as a covert downloader
+    (r'\bopenssl\b.*s_client\b.*\|\s*(ba)?sh\b', "openssl download piped to shell"),
 ]
 
 
