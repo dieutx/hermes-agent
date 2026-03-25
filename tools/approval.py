@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import threading
+import unicodedata
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,49 @@ def _approval_key_aliases(pattern_key: str) -> set[str]:
 
 
 # =========================================================================
+# Input normalization — applied before pattern matching to prevent
+# encoding-based bypasses (Unicode homoglyphs, ANSI escapes, shell
+# escape sequences, null bytes).
+# =========================================================================
+
+# ANSI escape codes (SGR, cursor movement, etc.)
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*[A-Za-z]|\x1b\].*?\x07|\x1b[()][0-9A-B]')
+
+# Bash $'\xHH' and $'\NNN' quoting (ANSI-C quoting)
+_BASH_DOLLAR_QUOTE_RE = re.compile(r"""\$'([^']*)'""")
+_BASH_HEX_ESC_RE = re.compile(r'\\x([0-9a-fA-F]{2})')
+_BASH_OCT_ESC_RE = re.compile(r'\\([0-7]{1,3})')
+
+
+def _expand_bash_dollar_quote(m: re.Match) -> str:
+    """Expand escape sequences inside a $'...' string to their literal characters."""
+    inner = m.group(1)
+    inner = _BASH_HEX_ESC_RE.sub(lambda h: chr(int(h.group(1), 16)), inner)
+    inner = _BASH_OCT_ESC_RE.sub(lambda o: chr(int(o.group(1), 8)), inner)
+    return inner
+
+
+def normalize_command(command: str) -> str:
+    """Normalize a command string to defeat encoding-based bypasses.
+
+    Steps:
+    1. Unicode NFKC normalization (fullwidth ｒｍ → ASCII rm)
+    2. Strip ANSI escape sequences (embedded SGR codes)
+    3. Remove null bytes
+    4. Expand bash $'\\xHH' / $'\\NNN' escape sequences
+    """
+    # 1. NFKC normalizes fullwidth, compatibility chars to ASCII equivalents
+    command = unicodedata.normalize("NFKC", command)
+    # 2. Strip ANSI escape sequences
+    command = _ANSI_RE.sub("", command)
+    # 3. Remove null bytes
+    command = command.replace("\x00", "")
+    # 4. Expand bash ANSI-C quoting ($'\x72\x6d' → rm)
+    command = _BASH_DOLLAR_QUOTE_RE.sub(_expand_bash_dollar_quote, command)
+    return command
+
+
+# =========================================================================
 # Detection
 # =========================================================================
 
@@ -88,7 +132,7 @@ def detect_dangerous_command(command: str) -> tuple:
     Returns:
         (is_dangerous, pattern_key, description) or (False, None, None)
     """
-    command_lower = command.lower()
+    command_lower = normalize_command(command).lower()
     for pattern, description in DANGEROUS_PATTERNS:
         if re.search(pattern, command_lower, re.IGNORECASE | re.DOTALL):
             pattern_key = description
