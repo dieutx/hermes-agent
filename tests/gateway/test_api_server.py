@@ -195,6 +195,20 @@ class TestAuth:
         assert result is not None
         assert result.status == 401
 
+    def test_auth_uses_constant_time_comparison(self):
+        """Verify _check_auth uses hmac.compare_digest, not == operator."""
+        import hmac
+        from unittest.mock import patch
+
+        config = PlatformConfig(enabled=True, extra={"key": "sk-test123"})
+        adapter = APIServerAdapter(config)
+        mock_request = MagicMock()
+        mock_request.headers = {"Authorization": "Bearer sk-test123"}
+
+        with patch.object(hmac, "compare_digest", wraps=hmac.compare_digest) as mock_compare:
+            adapter._check_auth(mock_request)
+            mock_compare.assert_called_once_with("sk-test123", "sk-test123")
+
 
 # ---------------------------------------------------------------------------
 # Helpers for HTTP tests

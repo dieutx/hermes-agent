@@ -18,6 +18,7 @@ Requires:
 """
 
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -337,6 +338,9 @@ class APIServerAdapter(BasePlatformAdapter):
 
         Returns None if auth is OK, or a 401 web.Response on failure.
         If no API key is configured, all requests are allowed.
+
+        Uses hmac.compare_digest() for constant-time comparison to
+        prevent timing side-channel attacks on the API key.
         """
         if not self._api_key:
             return None  # No key configured — allow all (local-only use)
@@ -344,7 +348,7 @@ class APIServerAdapter(BasePlatformAdapter):
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:].strip()
-            if token == self._api_key:
+            if hmac.compare_digest(token, self._api_key):
                 return None  # Auth OK
 
         return web.json_response(
