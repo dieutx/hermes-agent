@@ -2539,7 +2539,10 @@ def _restore_stashed_changes(
         print("  Restoring them may reapply local customizations onto the updated codebase.")
         print("  Review the result afterward if Hermes behaves unexpectedly.")
         print("Restore local changes now? [Y/n]")
-        response = input().strip().lower()
+        try:
+            response = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            response = "n"
         if response not in ("", "y", "yes"):
             print("Skipped restoring local changes.")
             print("Your changes are still preserved in git stash.")
@@ -2586,7 +2589,10 @@ def _restore_stashed_changes(
             print("\nReset working tree to clean state so Hermes can run?")
             print("  (You can re-apply your changes later with: git stash apply)")
             print("[Y/n] ", end="", flush=True)
-            response = input().strip().lower()
+            try:
+                response = input().strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                response = "n"
             if response not in ("", "y", "yes"):
                 do_reset = False
 
