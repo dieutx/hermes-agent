@@ -10,6 +10,7 @@ To add an alias: set ``aliases=("short",)`` on the existing ``CommandDef``.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from collections.abc import Callable, Mapping
@@ -18,6 +19,8 @@ from typing import Any
 
 from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
 from prompt_toolkit.completion import Completer, Completion
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +164,22 @@ def resolve_command(name: str) -> CommandDef | None:
 
 
 def register_plugin_command(cmd: CommandDef) -> None:
-    """Append a plugin-defined command to the registry and refresh lookups."""
+    """Append a plugin-defined command to the registry and refresh lookups.
+
+    Logs a warning (and skips registration) if the command name or any of
+    its aliases collide with an existing built-in command — prevents plugins
+    from silently overwriting core functionality like /help or /update.
+    """
+    all_names = [cmd.name, *cmd.aliases]
+    for name in all_names:
+        existing = _COMMAND_LOOKUP.get(name)
+        if existing is not None:
+            logger.warning(
+                "Plugin command '/%s' collides with existing command '/%s' "
+                "— skipping plugin command to preserve built-in",
+                cmd.name, existing.name,
+            )
+            return
     COMMAND_REGISTRY.append(cmd)
     rebuild_lookups()
 

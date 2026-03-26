@@ -331,6 +331,13 @@ class PluginManager:
             loaded.error = str(exc)
             logger.warning("Failed to load plugin '%s': %s", manifest.name, exc)
 
+        existing = self._plugins.get(manifest.name)
+        if existing is not None and existing.manifest.source != manifest.source:
+            logger.warning(
+                "Plugin name collision: '%s' (source '%s') is being "
+                "overwritten by source '%s'",
+                manifest.name, existing.manifest.source, manifest.source,
+            )
         self._plugins[manifest.name] = loaded
 
     def _load_directory_module(self, manifest: PluginManifest) -> types.ModuleType:

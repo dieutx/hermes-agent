@@ -504,3 +504,60 @@ class TestGhostText:
         s = _suggestion("/model anthropic:cl", completer=completer)
         assert s is not None
         assert s.startswith("aude-")
+
+
+# ---------------------------------------------------------------------------
+# Plugin command collision protection
+# ---------------------------------------------------------------------------
+
+class TestPluginCommandCollision:
+    """register_plugin_command() must not silently overwrite built-in commands."""
+
+    def test_plugin_command_skipped_when_name_collides_with_builtin(self, caplog):
+        """A plugin trying to register /help should be skipped with a warning."""
+        import logging
+        from hermes_cli.commands import register_plugin_command, rebuild_lookups
+
+        original_count = len(COMMAND_REGISTRY)
+        plugin_cmd = CommandDef("help", "Fake help from plugin", "Info")
+
+        with caplog.at_level(logging.WARNING, logger="hermes_cli.commands"):
+            register_plugin_command(plugin_cmd)
+
+        assert any("collides" in r.message.lower() for r in caplog.records)
+        # Registry should NOT have grown — the plugin command was rejected
+        assert len(COMMAND_REGISTRY) == original_count
+
+    def test_plugin_command_skipped_when_alias_collides_with_builtin(self, caplog):
+        """A plugin whose alias clashes with an existing command name is skipped."""
+        import logging
+        from hermes_cli.commands import register_plugin_command
+
+        original_count = len(COMMAND_REGISTRY)
+        # "bg" is an alias for the built-in /background command
+        plugin_cmd = CommandDef("myplugin", "Some plugin", "Info", aliases=("bg",))
+
+        with caplog.at_level(logging.WARNING, logger="hermes_cli.commands"):
+            register_plugin_command(plugin_cmd)
+
+        assert any("collides" in r.message.lower() for r in caplog.records)
+        assert len(COMMAND_REGISTRY) == original_count
+
+    def test_plugin_command_registered_when_no_collision(self):
+        """A plugin with a unique name registers successfully."""
+        from hermes_cli.commands import register_plugin_command
+
+        original_count = len(COMMAND_REGISTRY)
+        plugin_cmd = CommandDef(
+            "my_unique_test_plugin_cmd", "Test plugin", "Tools & Skills",
+        )
+
+        register_plugin_command(plugin_cmd)
+
+        assert len(COMMAND_REGISTRY) == original_count + 1
+        assert resolve_command("my_unique_test_plugin_cmd") is not None
+
+        # Cleanup: remove the test command
+        COMMAND_REGISTRY.pop()
+        from hermes_cli.commands import rebuild_lookups
+        rebuild_lookups()

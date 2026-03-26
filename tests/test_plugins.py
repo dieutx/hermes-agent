@@ -371,3 +371,41 @@ class TestPluginManagerList:
 # in PluginContext (hermes_cli/plugins.py).  The tests referenced _plugin_commands,
 # commands_registered, get_plugin_command_handler, and GATEWAY_KNOWN_COMMANDS
 # integration — all of which are unimplemented features.
+
+
+class TestPluginNameCollision:
+    """PluginManager warns when two plugins with the same name come from different sources."""
+
+    def test_same_name_different_source_logs_warning(self, caplog):
+        """Loading a plugin that collides with one from a different source emits a warning."""
+        mgr = PluginManager()
+
+        # Simulate first plugin loaded from "user" source
+        manifest_a = PluginManifest(name="my-plugin", source="user")
+        loaded_a = LoadedPlugin(manifest=manifest_a, enabled=True)
+        mgr._plugins["my-plugin"] = loaded_a
+
+        # Now load a second plugin with the same name from "entrypoint"
+        manifest_b = PluginManifest(name="my-plugin", source="entrypoint")
+        loaded_b = LoadedPlugin(manifest=manifest_b, enabled=True)
+
+        with caplog.at_level(logging.WARNING, logger="hermes_cli.plugins"):
+            mgr._load_plugin(manifest_b)
+
+        assert any("collision" in r.message.lower() for r in caplog.records)
+
+    def test_same_name_same_source_no_warning(self, caplog):
+        """Re-loading a plugin from the same source is silent."""
+        mgr = PluginManager()
+
+        manifest_a = PluginManifest(name="my-plugin", source="user")
+        loaded_a = LoadedPlugin(manifest=manifest_a, enabled=True)
+        mgr._plugins["my-plugin"] = loaded_a
+
+        # Reload from the same source
+        manifest_b = PluginManifest(name="my-plugin", source="user")
+
+        with caplog.at_level(logging.WARNING, logger="hermes_cli.plugins"):
+            mgr._load_plugin(manifest_b)
+
+        assert not any("collision" in r.message.lower() for r in caplog.records)
