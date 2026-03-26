@@ -108,9 +108,24 @@ def _get_provider(tts_config: Dict[str, Any]) -> str:
 # ===========================================================================
 # ffmpeg Opus conversion (Edge TTS MP3 -> OGG Opus for Telegram)
 # ===========================================================================
+_COMMON_BIN_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
+
+
+def _find_ffmpeg() -> Optional[str]:
+    """Locate the ffmpeg binary, checking Homebrew paths on macOS."""
+    path = shutil.which("ffmpeg")
+    if path:
+        return path
+    for d in _COMMON_BIN_DIRS:
+        candidate = os.path.join(d, "ffmpeg")
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
 def _has_ffmpeg() -> bool:
     """Check if ffmpeg is available on the system."""
-    return shutil.which("ffmpeg") is not None
+    return _find_ffmpeg() is not None
 
 
 def _convert_to_opus(mp3_path: str) -> Optional[str]:
@@ -129,7 +144,7 @@ def _convert_to_opus(mp3_path: str) -> Optional[str]:
     ogg_path = mp3_path.rsplit(".", 1)[0] + ".ogg"
     try:
         result = subprocess.run(
-            ["ffmpeg", "-i", mp3_path, "-acodec", "libopus",
+            [_find_ffmpeg(), "-i", mp3_path, "-acodec", "libopus",
              "-ac", "1", "-b:a", "64k", "-vbr", "off", ogg_path, "-y"],
             capture_output=True, timeout=30,
         )
@@ -325,7 +340,7 @@ def _generate_neutts(text: str, output_path: str, tts_config: Dict[str, Any]) ->
 
     # If the caller wanted .mp3 or .ogg, convert from WAV
     if wav_path != output_path:
-        ffmpeg = shutil.which("ffmpeg")
+        ffmpeg = _find_ffmpeg()
         if ffmpeg:
             conv_cmd = [ffmpeg, "-i", wav_path, "-y", "-loglevel", "error", output_path]
             subprocess.run(conv_cmd, check=True, timeout=30)
