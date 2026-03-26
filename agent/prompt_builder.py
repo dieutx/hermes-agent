@@ -262,23 +262,6 @@ def _parse_skill_file(skill_file: Path) -> tuple[bool, dict, str]:
         return True, {}, ""
 
 
-def _read_skill_conditions(skill_file: Path) -> dict:
-    """Extract conditional activation fields from SKILL.md frontmatter."""
-    try:
-        from tools.skills_tool import _parse_frontmatter
-        raw = skill_file.read_text(encoding="utf-8")[:2000]
-        frontmatter, _ = _parse_frontmatter(raw)
-        hermes = frontmatter.get("metadata", {}).get("hermes", {})
-        return {
-            "fallback_for_toolsets": hermes.get("fallback_for_toolsets", []),
-            "requires_toolsets": hermes.get("requires_toolsets", []),
-            "fallback_for_tools": hermes.get("fallback_for_tools", []),
-            "requires_tools": hermes.get("requires_tools", []),
-        }
-    except Exception as e:
-        logger.debug("Failed to read skill conditions from %s: %s", skill_file, e)
-        return {}
-
 
 def _skill_should_show(
     conditions: dict,
@@ -357,7 +340,7 @@ def build_skills_system_prompt(
         if fm_name in disabled or skill_name in disabled:
             continue
         # Extract conditions inline from already-parsed frontmatter
-        # (avoids redundant file re-read that _read_skill_conditions would do)
+        # (extracted inline to avoid a redundant file re-read)
         hermes_meta = (frontmatter.get("metadata") or {}).get("hermes") or {}
         conditions = {
             "fallback_for_toolsets": hermes_meta.get("fallback_for_toolsets", []),
