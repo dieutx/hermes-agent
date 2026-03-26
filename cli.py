@@ -3918,8 +3918,16 @@ class HermesCLI:
                     _cprint(f"{_GOLD}Ambiguous command: {cmd_lower}{_RST}")
                     _cprint(f"{_DIM}Did you mean: {', '.join(sorted(matches))}?{_RST}")
                 else:
-                    _cprint(f"\033[1;31mUnknown command: {cmd_lower}{_RST}")
-                    _cprint(f"{_DIM}{_GOLD}Type /help for available commands{_RST}")
+                    # No prefix match — try fuzzy matching for typo correction
+                    from hermes_cli.commands import suggest_similar_commands
+                    close = suggest_similar_commands(typed_base, all_known)
+                    if close:
+                        suggestions = ", ".join(close)
+                        _cprint(f"\033[1;31mUnknown command: {cmd_lower}{_RST}")
+                        _cprint(f"{_DIM}{_GOLD}Did you mean: {suggestions}?{_RST}")
+                    else:
+                        _cprint(f"\033[1;31mUnknown command: {cmd_lower}{_RST}")
+                        _cprint(f"{_DIM}{_GOLD}Type /help for available commands{_RST}")
         
         return True
     

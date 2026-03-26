@@ -160,6 +160,37 @@ def resolve_command(name: str) -> CommandDef | None:
     return _COMMAND_LOOKUP.get(name.lower().lstrip("/"))
 
 
+def suggest_similar_commands(
+    typed: str,
+    known_commands: set[str] | None = None,
+    n: int = 3,
+    cutoff: float = 0.6,
+) -> list[str]:
+    """Return fuzzy matches for a mistyped slash command.
+
+    Uses SequenceMatcher (same algorithm as git's "did you mean?" suggestions)
+    to find the closest known commands when prefix matching fails.
+
+    Args:
+        typed: The command the user typed (with or without leading slash).
+        known_commands: Set of known command strings to match against.
+            Defaults to the built-in COMMANDS dict.
+        n: Maximum number of suggestions.
+        cutoff: Minimum similarity ratio (0.0–1.0).
+
+    Returns:
+        List of closest matching command strings, best match first.
+    """
+    import difflib
+
+    if known_commands is None:
+        known_commands = set(COMMANDS)
+    # Normalize: ensure typed has leading slash for comparison
+    if not typed.startswith("/"):
+        typed = f"/{typed}"
+    return difflib.get_close_matches(typed, sorted(known_commands), n=n, cutoff=cutoff)
+
+
 def register_plugin_command(cmd: CommandDef) -> None:
     """Append a plugin-defined command to the registry and refresh lookups."""
     COMMAND_REGISTRY.append(cmd)
