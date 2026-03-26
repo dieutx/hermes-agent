@@ -17,6 +17,8 @@ Gateway-specific env vars:
 
 import asyncio
 import base64
+import hashlib
+import hmac
 import logging
 import os
 import re
@@ -203,6 +205,48 @@ class SmsAdapter(BasePlatformAdapter):
     # Twilio webhook handler
     # ------------------------------------------------------------------
 
+    def _validate_twilio_signature(self, request, raw_body: bytes) -> bool:
+        """Validate X-Twilio-Signature to prevent webhook spoofing.
+
+        Uses HMAC-SHA1 as specified by the Twilio security docs.
+        Returns True if validation passes or is disabled (no auth token).
+        """
+        auth_token = self._auth_token
+        if not auth_token:
+            return True  # no token configured — can't validate
+
+        signature = request.headers.get("X-Twilio-Signature", "")
+        if not signature:
+            logger.warning("[sms] missing X-Twilio-Signature header")
+            return False
+
+        # Build the validation URL from the request
+        public_url = os.getenv("SMS_WEBHOOK_PUBLIC_URL", "")
+        if public_url:
+            url = public_url.rstrip("/")
+        else:
+            scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+            host = request.headers.get("X-Forwarded-Host", request.host)
+            url = f"{scheme}://{host}{request.path}"
+
+        # Parse form params and sort them alphabetically
+        params = urllib.parse.parse_qs(raw_body.decode("utf-8"), keep_blank_values=True)
+        sorted_params = sorted(
+            ((k, v[0]) for k, v in params.items()),
+            key=lambda x: x[0],
+        )
+        data_string = url + "".join(k + v for k, v in sorted_params)
+
+        # Compute expected signature
+        expected = base64.b64encode(
+            hmac.new(auth_token.encode("utf-8"), data_string.encode("utf-8"), hashlib.sha1).digest()
+        ).decode("utf-8")
+
+        if not hmac.compare_digest(signature, expected):
+            logger.warning("[sms] invalid X-Twilio-Signature (webhook spoofing attempt?)")
+            return False
+        return True
+
     async def _handle_webhook(self, request) -> "aiohttp.web.Response":
         from aiohttp import web
 
@@ -216,6 +260,14 @@ class SmsAdapter(BasePlatformAdapter):
                 text='<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
                 content_type="application/xml",
                 status=400,
+            )
+
+        # Validate Twilio webhook signature to prevent spoofing
+        if not self._validate_twilio_signature(request, raw):
+            return web.Response(
+                text='<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+                content_type="application/xml",
+                status=403,
             )
 
         # Extract fields (parse_qs returns lists)
