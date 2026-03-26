@@ -27,6 +27,11 @@ from gateway.config import Platform, PlatformConfig
 from gateway.session import SessionSource, build_session_key
 from hermes_cli.config import get_hermes_home
 
+try:
+    from tools.url_safety import is_safe_url as _is_safe_url
+except Exception:
+    _is_safe_url = lambda url: False  # noqa: E731 — fail-closed
+
 
 GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE = (
     "Secure secret entry is not supported over messaging. "
@@ -83,7 +88,13 @@ async def cache_image_from_url(url: str, ext: str = ".jpg") -> str:
 
     Returns:
         Absolute path to the cached image file as a string.
+
+    Raises:
+        ValueError: If the URL targets a private/internal address (SSRF).
     """
+    if not _is_safe_url(url):
+        raise ValueError(f"Blocked download from private/internal address: {url}")
+
     import httpx
 
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
@@ -163,7 +174,13 @@ async def cache_audio_from_url(url: str, ext: str = ".ogg") -> str:
 
     Returns:
         Absolute path to the cached audio file as a string.
+
+    Raises:
+        ValueError: If the URL targets a private/internal address (SSRF).
     """
+    if not _is_safe_url(url):
+        raise ValueError(f"Blocked download from private/internal address: {url}")
+
     import httpx
 
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
