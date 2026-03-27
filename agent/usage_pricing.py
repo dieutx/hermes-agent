@@ -330,8 +330,36 @@ def resolve_billing_route(
     return BillingRoute(provider=provider_name or "unknown", model=model.split("/")[-1] if model else "", base_url=base_url or "", billing_mode="unknown")
 
 
+# Undated alias → dated name used in the pricing table.
+# The model catalog lists aliases like claude-opus-4-6 as the default,
+# but pricing is keyed by the dated version.
+_MODEL_ALIASES: Dict[str, str] = {
+    # Dot-versioned aliases (what hermes_cli/models.py lists as default)
+    "claude-opus-4.6": "claude-opus-4-20250514",
+    "claude-sonnet-4.6": "claude-sonnet-4-20250514",
+    "claude-opus-4.5": "claude-opus-4-20250514",
+    "claude-sonnet-4.5": "claude-sonnet-4-20250514",
+    "claude-haiku-4.5": "claude-3-5-haiku-20241022",
+    # Hyphen-versioned aliases (alternate format)
+    "claude-opus-4-6": "claude-opus-4-20250514",
+    "claude-sonnet-4-6": "claude-sonnet-4-20250514",
+    "claude-opus-4-5": "claude-opus-4-20250514",
+    "claude-sonnet-4-5": "claude-sonnet-4-20250514",
+    "claude-haiku-4-5": "claude-3-5-haiku-20241022",
+    # Dated non-matching variants
+    "claude-opus-4-5-20251101": "claude-opus-4-20250514",
+    "claude-sonnet-4-5-20250929": "claude-sonnet-4-20250514",
+    "claude-haiku-4-5-20251001": "claude-3-5-haiku-20241022",
+    # Short aliases
+    "claude-3-5-sonnet": "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku": "claude-3-5-haiku-20241022",
+}
+
+
 def _lookup_official_docs_pricing(route: BillingRoute) -> Optional[PricingEntry]:
-    return _OFFICIAL_DOCS_PRICING.get((route.provider, route.model.lower()))
+    model = route.model.lower()
+    model = _MODEL_ALIASES.get(model, model)
+    return _OFFICIAL_DOCS_PRICING.get((route.provider, model))
 
 
 def _openrouter_pricing_entry(route: BillingRoute) -> Optional[PricingEntry]:
