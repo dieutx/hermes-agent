@@ -1929,7 +1929,7 @@ class HermesCLI:
         # AIAgent/OpenAI client holds auth at init time, so rebuild if key,
         # routing, or the effective model changed.
         if (credentials_changed or routing_changed or model_changed) and self.agent is not None:
-            self.agent = None
+            self._reinit_agent_preserve_counters()
             self._active_agent_route_signature = None
 
         return True
@@ -1951,6 +1951,36 @@ class HermesCLI:
                 "args": list(self.acp_args or []),
             },
         )
+
+    _SESSION_COUNTER_FIELDS = (
+        "session_total_tokens", "session_input_tokens", "session_output_tokens",
+        "session_prompt_tokens", "session_completion_tokens",
+        "session_cache_read_tokens", "session_cache_write_tokens",
+        "session_reasoning_tokens", "session_api_calls",
+        "session_estimated_cost_usd", "session_cost_status", "session_cost_source",
+    )
+
+    def _reinit_agent_preserve_counters(self) -> None:
+        """Destroy the agent to force re-init, preserving session usage counters.
+
+        Commands like /reasoning, /prompt, and /personality need to rebuild the
+        agent with new config, but should not wipe token counts and cost data.
+        """
+        saved = {}
+        if self.agent:
+            for field in self._SESSION_COUNTER_FIELDS:
+                saved[field] = getattr(self.agent, field, None)
+        self.agent = None
+        self._pending_counter_restore = saved
+
+    def _restore_counters_if_pending(self) -> None:
+        """Restore saved counters onto the newly created agent."""
+        saved = getattr(self, "_pending_counter_restore", None)
+        if saved and self.agent:
+            for field, value in saved.items():
+                if value is not None:
+                    setattr(self.agent, field, value)
+            self._pending_counter_restore = None
 
     def _init_agent(self, *, model_override: str = None, runtime_override: dict = None, route_label: str = None) -> bool:
         """
@@ -2178,6 +2208,7 @@ class HermesCLI:
         except Exception:
             pass
 
+        self._restore_counters_if_pending()
         return True
 
     def _display_resumed_history(self):
@@ -3186,14 +3217,14 @@ class HermesCLI:
             
             if new_prompt.lower() == "clear":
                 self.system_prompt = ""
-                self.agent = None  # Force re-init
+                self._reinit_agent_preserve_counters()
                 if save_config_value("agent.system_prompt", ""):
                     print("(^_^)b System prompt cleared (saved to config)")
                 else:
                     print("(^_^) System prompt cleared (session only)")
             else:
                 self.system_prompt = new_prompt
-                self.agent = None  # Force re-init
+                self._reinit_agent_preserve_counters()
                 if save_config_value("agent.system_prompt", new_prompt):
                     print("(^_^)b System prompt set (saved to config)")
                 else:
@@ -3253,7 +3284,7 @@ class HermesCLI:
             
             if personality_name in ("none", "default", "neutral"):
                 self.system_prompt = ""
-                self.agent = None  # Force re-init
+                self._reinit_agent_preserve_counters()
                 if save_config_value("agent.system_prompt", ""):
                     print("(^_^)b Personality cleared (saved to config)")
                 else:
@@ -3261,7 +3292,7 @@ class HermesCLI:
                 print("  No personality overlay — using base agent behavior.")
             elif personality_name in self.personalities:
                 self.system_prompt = self._resolve_personality_prompt(self.personalities[personality_name])
-                self.agent = None  # Force re-init
+                self._reinit_agent_preserve_counters()
                 if save_config_value("agent.system_prompt", self.system_prompt):
                     print(f"(^_^)b Personality set to '{personality_name}' (saved to config)")
                 else:
@@ -4415,7 +4446,11 @@ class HermesCLI:
             return
 
         self.reasoning_config = parsed
-        self.agent = None  # Force agent re-init with new reasoning config
+        if self.agent:
+            self.agent.reasoning_config = parsed
+            self.agent._invalidate_system_prompt()
+        else:
+            self._reinit_agent_preserve_counters()
 
         if save_config_value("agent.reasoning_effort", arg):
             _cprint(f"  {_GOLD}✓ Reasoning effort set to '{arg}' (saved to config){_RST}")
