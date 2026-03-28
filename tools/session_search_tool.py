@@ -199,23 +199,29 @@ def _list_recent_sessions(db, limit: int, current_session_id: str = None) -> str
 
         # Resolve current session lineage to exclude it
         current_root = None
+        current_lineage = set()
         if current_session_id:
             try:
                 sid = current_session_id
-                visited = set()
-                while sid and sid not in visited:
-                    visited.add(sid)
+                while sid:
+                    current_lineage.add(sid)
                     s = db.get_session(sid)
                     parent = s.get("parent_session_id") if s else None
-                    sid = parent if parent else None
-                current_root = max(visited, key=len) if visited else current_session_id
+                    if parent and parent not in current_lineage:
+                        sid = parent
+                    else:
+                        current_root = sid
+                        break
+                if not current_root:
+                    current_root = current_session_id
             except Exception:
                 current_root = current_session_id
+                current_lineage = {current_session_id}
 
         results = []
         for s in sessions:
             sid = s.get("id", "")
-            if current_root and (sid == current_root or sid == current_session_id):
+            if sid in current_lineage:
                 continue
             # Skip child/delegation sessions (they have parent_session_id)
             if s.get("parent_session_id"):
