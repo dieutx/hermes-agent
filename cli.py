@@ -4479,6 +4479,9 @@ class HermesCLI:
                     self.agent._honcho.flush_all()
                 except Exception:
                     pass
+            # Sync session_id — compression creates a child session on the agent
+            if hasattr(self, '_session_db') and self.agent:
+                self.session_id = self.agent.session_id
         except Exception as e:
             print(f"  ❌ Compression failed: {e}")
 
@@ -5723,6 +5726,10 @@ class HermesCLI:
 
             # Update history with full conversation
             self.conversation_history = result.get("messages", self.conversation_history) if result else self.conversation_history
+
+            # Sync session_id — auto-compression may have created a child session
+            if self.agent and self.agent.session_id != getattr(self, 'session_id', None):
+                self.session_id = self.agent.session_id
 
             # Get the final response
             response = result.get("final_response", "") if result else ""
