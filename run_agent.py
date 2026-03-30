@@ -7767,12 +7767,15 @@ class AIAgent:
                             for i in range(len(messages) - 1, -1, -1):
                                 msg = messages[i]
                                 if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                                    tool_names = []
-                                    for tc in msg["tool_calls"]:
-                                        if not tc or not isinstance(tc, dict): continue
-                                        fn = tc.get("function", {})
-                                        tool_names.append(fn.get("name", "unknown"))
-                                    msg["content"] = f"Calling the {', '.join(tool_names)} tool{'s' if len(tool_names) > 1 else ''}..."
+                                    # Only set placeholder if content is empty — preserve
+                                    # real content so it persists in session history
+                                    if not msg.get("content") or not self._has_content_after_think_block(msg.get("content", "")):
+                                        tool_names = []
+                                        for tc in msg["tool_calls"]:
+                                            if not tc or not isinstance(tc, dict): continue
+                                            fn = tc.get("function", {})
+                                            tool_names.append(fn.get("name", "unknown"))
+                                        msg["content"] = f"Calling the {', '.join(tool_names)} tool{'s' if len(tool_names) > 1 else ''}..."
                                     break
                             final_response = self._strip_think_blocks(fallback).strip()
                             self._response_was_previewed = True
@@ -7806,16 +7809,18 @@ class AIAgent:
                             fallback = getattr(self, '_last_content_with_tools', None)
                             if fallback:
                                 self._last_content_with_tools = None
-                                # Find the last assistant message with tool_calls and rewrite it
+                                # Find the last assistant message with tool_calls and set placeholder
+                                # only if its content is empty — preserve real content for history
                                 for i in range(len(messages) - 1, -1, -1):
                                     msg = messages[i]
                                     if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                                        tool_names = []
-                                        for tc in msg["tool_calls"]:
-                                            if not tc or not isinstance(tc, dict): continue
-                                            fn = tc.get("function", {})
-                                            tool_names.append(fn.get("name", "unknown"))
-                                        msg["content"] = f"Calling the {', '.join(tool_names)} tool{'s' if len(tool_names) > 1 else ''}..."
+                                        if not msg.get("content") or not self._has_content_after_think_block(msg.get("content", "")):
+                                            tool_names = []
+                                            for tc in msg["tool_calls"]:
+                                                if not tc or not isinstance(tc, dict): continue
+                                                fn = tc.get("function", {})
+                                                tool_names.append(fn.get("name", "unknown"))
+                                            msg["content"] = f"Calling the {', '.join(tool_names)} tool{'s' if len(tool_names) > 1 else ''}..."
                                         break
                                 # Strip <think> blocks from fallback content for user display
                                 final_response = self._strip_think_blocks(fallback).strip()
