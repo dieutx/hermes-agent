@@ -10,6 +10,7 @@ import logging
 import os
 import random
 import re
+import tempfile
 import uuid
 from abc import ABC, abstractmethod
 
@@ -852,9 +853,20 @@ class BasePlatformAdapter(ABC):
             if _in_code(match.start()):
                 continue
             raw = match.group(0)
-            expanded = os.path.expanduser(raw)
-            if os.path.isfile(expanded):
-                found.append((raw, expanded))
+            expanded = os.path.realpath(os.path.expanduser(raw))
+            if not os.path.isfile(expanded):
+                continue
+            # Only allow files from agent-managed directories to prevent
+            # exfiltration of arbitrary local media via prompt injection
+            _safe_prefixes = (
+                os.path.realpath(tempfile.gettempdir()),
+                os.path.realpath(get_image_cache_dir()),
+                os.path.realpath(get_audio_cache_dir()),
+                os.path.realpath(str(DOCUMENT_CACHE_DIR)),
+            )
+            if not any(expanded.startswith(p + os.sep) or expanded.startswith(p + "/") for p in _safe_prefixes):
+                continue
+            found.append((raw, expanded))
 
         # Deduplicate by expanded path, preserving discovery order
         seen: set = set()
