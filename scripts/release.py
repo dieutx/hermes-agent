@@ -83,6 +83,7 @@ AUTHOR_MAP = {
     "pickett.austin@gmail.com": "austinpickett",
     "jaisehgal11299@gmail.com": "jaisup",
     "percydikec@gmail.com": "PercyDikec",
+    "dangtc94@gmail.com": "dieutx",
     "dean.kerr@gmail.com": "deankerr",
     "socrates1024@gmail.com": "socrates1024",
     "satelerd@gmail.com": "satelerd",
