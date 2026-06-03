@@ -18,6 +18,7 @@ env:
 jobs:
   sync:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout fork
         uses: actions/checkout@v5
@@ -27,13 +28,16 @@ jobs:
 
       - name: Add upstream
         run: |
-          git remote add upstream https://github.com/${UPSTREAM_REPO}.git
+          git remote add upstream https://github.com/${UPSTREAM_REPO}.git || true
           git fetch upstream ${UPSTREAM_BRANCH}
+          git fetch origin ${TARGET_BRANCH}
 
       - name: Sync upstream into fork
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git checkout ${TARGET_BRANCH}
           git rebase upstream/${UPSTREAM_BRANCH}
-          git push origin ${TARGET_BRANCH}
+
+          git push --force-with-lease origin ${TARGET_BRANCH}
