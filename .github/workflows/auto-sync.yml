@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SYNC_TOKEN }}
 
       - name: Add upstream
         run: |
@@ -33,11 +33,14 @@ jobs:
           git fetch origin ${TARGET_BRANCH}
 
       - name: Sync upstream into fork
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "dieutx"
+          git config user.email "dieutx@users.noreply.github.com"
 
           git checkout ${TARGET_BRANCH}
           git rebase upstream/${UPSTREAM_BRANCH}
 
+          git remote set-url origin https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
           git push --force-with-lease origin ${TARGET_BRANCH}
